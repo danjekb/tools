@@ -7,16 +7,11 @@ on:
         description: 'Adres URL pliku do pobrania'
         required: true
         type: string
-      file_name:
-        description: 'Nazwa docelowa pliku (np. obrazek.jpg lub dane/plik.json)'
-        required: true
-        type: string
 
 jobs:
   download-and-commit:
     runs-on: ubuntu-latest
 
-    # Nadajemy uprawnienia do zapisu w repozytorium
     permissions:
       contents: write
 
@@ -25,28 +20,34 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. Tworzenie folderu (jeśli podano ścieżkę, np. dane/plik.txt)
-    - name: Create directory if needed
-      run: |
-        mkdir -p "$(dirname "${{ inputs.file_name }}")"
-
-    # 3. Pobieranie pliku za pomocą curl
+    # 2. Wyciąganie nazwy pliku z linku i pobieranie
     - name: Download file
       run: |
-        curl -L -o "${{ inputs.file_name }}" "${{ inputs.file_url }}"
+        # Pobieramy pełny URL z inputu
+        URL="${{ inputs.file_url }}"
+        
+        # Odcinamy wszystko przed ostatnim slashem oraz ewentualne parametry po pytajniku (query params)
+        FILE_NAME=$(basename "$URL" | cut -d? -f1)
+        
+        echo "Wykryta nazwa pliku: $FILE_NAME"
+        
+        # Pobieramy plik pod oryginalną nazwą
+        curl -L -o "$FILE_NAME" "$URL"
+        
+        # Zapisujemy nazwę do zmiennej środowiskowej, żeby użyć jej w kolejnym kroku
+        echo "DOWNLOADED_FILE=$FILE_NAME" >> $GITHUB_ENV
 
-    # 4. Commit i Push zmian
+    # 3. Commit i Push zmian
     - name: Commit and Push
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         
-        git add "${{ inputs.file_name }}"
+        git add "$DOWNLOADED_FILE"
         
-        # Sprawdzamy czy plik faktycznie się zmienił/doszedł, żeby nie wywalić błędu przy pustym commicie
         if git diff --staged --quiet; then
-          echo "Plik już istnieje i nie uległ zmianie."
+          echo "Plik o nazwie $DOWNLOADED_FILE już istnieje w repozytorium i nie zmienił zawartości."
         else
-          git commit -m "Automatyczne dodanie pliku: ${{ inputs.file_name }}"
+          git commit -m "Automatyczne dodanie pliku: $DOWNLOADED_FILE"
           git push
         fi
