@@ -1,0 +1,123 @@
+name: Extract Android Images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y unzip p7zip-full tar gzip xz-utils
+
+      - name: Download artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifact_work
+          cd artifact_work
+
+          echo "Downloading artifact..."
+
+          gh api \
+            repos/danjekb/Bodss/actions/artifacts/7614911258/zip \
+            > artifact.zip
+
+          echo "Downloaded artifact.zip"
+
+      - name: Extract recursively
+        run: |
+          cd artifact_work
+
+          mkdir extracted
+          unzip -o artifact.zip -d extracted || true
+
+          recursive_extract() {
+            local dir="$1"
+
+            echo "Scanning: $dir"
+
+            find "$dir" -type f | while read file; do
+              lower=$(echo "$file" | tr '[:upper:]' '[:lower:]')
+
+              if [[ "$lower" == *.zip ]]; then
+                out="${file}_unzipped"
+                mkdir -p "$out"
+                unzip -o "$file" -d "$out" || true
+              fi
+
+              if [[ "$lower" == *.tar ]]; then
+                out="${file}_untar"
+                mkdir -p "$out"
+                tar -xf "$file" -C "$out" || true
+              fi
+
+              if [[ "$lower" == *.tar.gz ]] || [[ "$lower" == *.tgz ]]; then
+                out="${file}_targz"
+                mkdir -p "$out"
+                tar -xzf "$file" -C "$out" || true
+              fi
+
+              if [[ "$lower" == *.7z ]]; then
+                out="${file}_7z"
+                mkdir -p "$out"
+                7z x "$file" -o"$out" -y || true
+              fi
+
+              if [[ "$lower" == *.img ]]; then
+                mkdir -p "${file}_img"
+                7z x "$file" -o"${file}_img" -y || true
+              fi
+            done
+          }
+
+          for i in {1..10}; do
+            echo "Recursive pass $i"
+            recursive_extract extracted
+          done
+
+      - name: Find target images
+        run: |
+          mkdir -p release_files
+
+          echo "Searching for images..."
+
+          BOOT=$(find artifact_work -type f -iname "boot.img" | head -n1)
+          VENDOR_BOOT=$(find artifact_work -type f -iname "vendor_boot.img" | head -n1)
+          DTBO=$(find artifact_work -type f -iname "dtbo.img" | head -n1)
+
+          if [ -n "$BOOT" ]; then
+            cp "$BOOT" release_files/boot.img
+            echo "Found boot.img"
+          fi
+
+          if [ -n "$VENDOR_BOOT" ]; then
+            cp "$VENDOR_BOOT" release_files/vendor_boot.img
+            echo "Found vendor_boot.img"
+          fi
+
+          if [ -n "$DTBO" ]; then
+            cp "$DTBO" release_files/dtbo.img
+            echo "Found dtbo.img"
+          fi
+
+          ls -la release_files
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: extracted-${{ github.run_number }}
+          name: Extracted Images #${{ github.run_number }}
+          files: |
+            release_files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
