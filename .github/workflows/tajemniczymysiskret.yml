@@ -52,14 +52,39 @@ jobs:
       - name: Pobierz OTA zip
         run: |
           mkdir -p ota
-          curl -L --retry 3 -o ota/ota.zip "${{ inputs.ota_url }}"
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+          echo "Próba 1: curl..."
+          curl -L --retry 3 \
+            -A "$UA" \
+            -e "https://xdaforums.com/" \
+            -o ota/ota.zip \
+            "${{ inputs.ota_url }}" && DOWNLOADED=1 || DOWNLOADED=0
+
+          # Sprawdź czy pobrało coś sensownego (>1MB)
+          SIZE=$(stat -c%s ota/ota.zip 2>/dev/null || echo 0)
+          if [ "$DOWNLOADED" -eq 0 ] || [ "$SIZE" -lt 1048576 ]; then
+            echo "curl nie pobrał pliku (rozmiar: $SIZE bajtów), próba 2: wget..."
+            wget -L --no-check-certificate \
+              --user-agent="$UA" \
+              --referer="https://xdaforums.com/" \
+              -O ota/ota.zip \
+              "${{ inputs.ota_url }}"
+          fi
+
+          SIZE=$(stat -c%s ota/ota.zip 2>/dev/null || echo 0)
+          if [ "$SIZE" -lt 1048576 ]; then
+            echo "❌ Oba narzędzia zawiodły, pobrany plik ma tylko $SIZE bajtów"
+            exit 1
+          fi
+
           ls -lh ota/
 
       # ── Pobierz bazowy AP tar z Google Drive ────────────────────────────
       - name: Pobierz bazowy AP tar (Google Drive)
         run: |
           mkdir -p base_fw
-          gdown --id "${{ inputs.base_gdrive_id }}" -O base_fw/AP_base.tar.md5 --fuzzy
+          gdown "${{ inputs.base_gdrive_id }}" -O base_fw/AP_base.tar.md5
           ls -lh base_fw/
 
       # ── Wypakuj OTA zip ──────────────────────────────────────────────────
