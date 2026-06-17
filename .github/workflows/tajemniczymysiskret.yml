@@ -52,7 +52,7 @@ jobs:
       - name: Pobierz OTA zip
         run: |
           mkdir -p ota
-          wget -q --show-progress -O ota/ota.zip "${{ inputs.ota_url }}"
+          curl -L --retry 3 -o ota/ota.zip "${{ inputs.ota_url }}"
           ls -lh ota/
 
       # ── Pobierz bazowy AP tar z Google Drive ────────────────────────────
