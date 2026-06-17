@@ -1,0 +1,216 @@
+name: Samsung BLOCK OTA Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      ota_url:
+        description: 'Direct URL do paczki OTA zip'
+        required: true
+        type: string
+      base_gdrive_id:
+        description: 'Google Drive FILE ID bazowego AP tar.md5 (S901EXXSDGZB6)'
+        required: true
+        type: string
+
+jobs:
+  apply-ota:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Zwolnij miejsce na dysku (~20GB) ────────────────────────────────
+      - name: Zwolnij miejsce na dysku
+        run: |
+          echo "Przed:"
+          df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+          docker rmi $(docker images -q) 2>/dev/null || true
+          echo "Po:"
+          df -h /
+
+      # ── Narzędzia systemowe ──────────────────────────────────────────────
+      - name: Zainstaluj zależności
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lz4 brotli python3 python3-pip zip unzip tar pv
+          pip3 install gdown
+
+      # ── Sprawdź wolne miejsce ────────────────────────────────────────────
+      - name: Sprawdź dysk
+        run: df -h
+
+      # ── Pobierz OTA zip z direct linka ──────────────────────────────────
+      - name: Pobierz OTA zip
+        run: |
+          mkdir -p ota
+          wget -q --show-progress -O ota/ota.zip "${{ inputs.ota_url }}"
+          ls -lh ota/
+
+      # ── Pobierz bazowy AP tar z Google Drive ────────────────────────────
+      - name: Pobierz bazowy AP tar (Google Drive)
+        run: |
+          mkdir -p base_fw
+          gdown --id "${{ inputs.base_gdrive_id }}" -O base_fw/AP_base.tar.md5 --fuzzy
+          ls -lh base_fw/
+
+      # ── Wypakuj OTA zip ──────────────────────────────────────────────────
+      - name: Wypakuj OTA zip
+        run: |
+          mkdir -p ota_extracted
+          unzip -q ota/ota.zip -d ota_extracted
+          ls -lh ota_extracted/
+          # Zwolnij miejsce
+          rm ota/ota.zip
+
+      # ── Wypakuj bazowy AP tar ────────────────────────────────────────────
+      - name: Wypakuj AP tar
+        run: |
+          mkdir -p base_extracted
+          cd base_extracted
+          # Obetnij MD5 suffix (ostatnie 32 bajty + newline) i wypakuj
+          head -c -33 ../base_fw/AP_base.tar.md5 | tar x
+          ls -lh
+          # Zwolnij miejsce
+          rm ../base_fw/AP_base.tar.md5
+
+      # ── Zdekompresuj obrazy lz4 ─────────────────────────────────────────
+      - name: Zdekompresuj obrazy lz4
+        run: |
+          cd base_extracted
+          for f in *.lz4; do
+            [ -f "$f" ] || continue
+            echo "Dekompresuję: $f"
+            lz4 -d "$f" "${f%.lz4}"
+            rm "$f"
+          done
+          ls -lh *.img 2>/dev/null || echo "Brak .img (może są spakowane inaczej)"
+
+      # ── lpunpack – wyciągnij partycje z super.img ───────────────────────
+      - name: Zainstaluj lpunpack
+        run: |
+          wget -q https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q platform-tools-latest-linux.zip platform-tools/lpunpack
+          sudo mv platform-tools/lpunpack /usr/local/bin/
+          rm -rf platform-tools platform-tools-latest-linux.zip
+
+      - name: Wypakuj partycje z super.img
+        run: |
+          mkdir -p partitions
+          if [ -f base_extracted/super.img ]; then
+            lpunpack base_extracted/super.img partitions/
+            ls -lh partitions/
+          else
+            echo "Brak super.img – kopiuję osobne obrazy"
+            cp base_extracted/*.img partitions/ 2>/dev/null || true
+          fi
+
+      # ── Pobierz narzędzia BLOCK OTA (AOSP) ──────────────────────────────
+      - name: Pobierz narzędzia BLOCK OTA
+        run: |
+          wget -q -O blockimgdiff.py \
+            https://raw.githubusercontent.com/LineageOS/android_tools_releasetools/lineage-21/blockimgdiff.py
+          wget -q -O rangelib.py \
+            https://raw.githubusercontent.com/LineageOS/android_tools_releasetools/lineage-21/rangelib.py
+
+      # ── Zastosuj patche dla każdej partycji ─────────────────────────────
+      - name: Zastosuj BLOCK OTA patche
+        run: |
+          mkdir -p output_partitions
+          OTA_DIR="ota_extracted"
+          FAILED=0
+
+          for tlist in "$OTA_DIR"/*.transfer.list; do
+            [ -f "$tlist" ] || continue
+            PART=$(basename "$tlist" .transfer.list)
+            echo "━━━ Partycja: $PART ━━━"
+
+            NEW_DAT_BR="$OTA_DIR/${PART}.new.dat.br"
+            NEW_DAT="$OTA_DIR/${PART}.new.dat"
+            PATCH_DAT="$OTA_DIR/${PART}.patch.dat"
+
+            # Zdekompresuj brotli
+            if [ -f "$NEW_DAT_BR" ]; then
+              echo "  Dekompresuję brotli..."
+              brotli -d "$NEW_DAT_BR" -o "$NEW_DAT"
+            fi
+
+            SRC_IMG=$(ls partitions/${PART}.img 2>/dev/null | head -1)
+
+            if [ -z "$SRC_IMG" ]; then
+              echo "  ⚠️  Brak źródłowego obrazu dla $PART, pomijam"
+              continue
+            fi
+
+            echo "  Źródło: $SRC_IMG"
+            cp "$SRC_IMG" "output_partitions/${PART}.img"
+
+            python3 blockimgdiff.py \
+              --source "output_partitions/${PART}.img" \
+              --transfer "$tlist" \
+              --new_data "$NEW_DAT" \
+              --patch "$PATCH_DAT" \
+              --output "output_partitions/${PART}.img.new"
+
+            if [ $? -eq 0 ]; then
+              mv "output_partitions/${PART}.img.new" "output_partitions/${PART}.img"
+              echo "  ✓ Gotowe"
+            else
+              echo "  ✗ Błąd dla $PART"
+              FAILED=1
+            fi
+
+            # Zwolnij miejsce po każdej partycji
+            rm -f "$NEW_DAT" "$NEW_DAT_BR"
+          done
+
+          [ $FAILED -eq 0 ] || (echo "❌ Niektóre partycje nie zostały spatchowane!" && exit 1)
+          ls -lh output_partitions/
+
+      # ── Skopiuj obrazy spoza dynamic partitions (boot, dtbo, vbmeta) ────
+      - name: Skopiuj obrazy statyczne
+        run: |
+          for img in boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            OTA_IMG="ota_extracted/$img"
+            BASE_IMG="base_extracted/$img"
+            if [ -f "$OTA_IMG" ]; then
+              cp "$OTA_IMG" "output_partitions/$img"
+              echo "✓ $img (z OTA)"
+            elif [ -f "$BASE_IMG" ]; then
+              cp "$BASE_IMG" "output_partitions/$img"
+              echo "  $img (z bazy)"
+            fi
+          done
+
+      # ── Spakuj nowy AP tar.md5 ───────────────────────────────────────────
+      - name: Spakuj AP tar.md5
+        run: |
+          mkdir -p final
+          OUTPUT="AP_S901EXXUDHZCB_patched.tar"
+
+          cd output_partitions
+          tar -H ustar -c *.img -f "../final/$OUTPUT"
+          cd ..
+
+          # Dołącz MD5 w formacie Odin
+          md5sum -t "final/$OUTPUT" >> "final/$OUTPUT"
+          mv "final/$OUTPUT" "final/${OUTPUT%.tar}.tar.md5"
+
+          ls -lh final/
+          df -h
+
+      # ── Upload artifact ──────────────────────────────────────────────────
+      - name: Upload AP tar.md5
+        uses: actions/upload-artifact@v4
+        with:
+          name: AP_S901EXXUDHZCB_patched
+          path: final/*.tar.md5
+          retention-days: 7
