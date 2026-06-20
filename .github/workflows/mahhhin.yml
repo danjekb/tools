@@ -1,0 +1,82 @@
+name: Diagnose decompilation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download files
+        run: |
+          wget -O services.jar https://github.com/danjekb/tools/releases/download/1.0/services.jar
+          wget -O SecSettings.apk https://github.com/danjekb/tools/releases/download/1.0/SecSettings.apk
+
+      - name: Install Java & apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk
+          wget -O apktool https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool
+          chmod +x apktool
+          sudo mv apktool /usr/local/bin/
+          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.2/apktool_3.0.2.jar
+          sudo mv apktool.jar /usr/local/bin/
+
+      - name: Check file types
+        run: |
+          echo "=== file services.jar ==="
+          file services.jar
+          echo ""
+          echo "=== file SecSettings.apk ==="
+          file SecSettings.apk
+
+      - name: Try to decompile services.jar
+        run: |
+          mkdir -p services_decompiled
+          cd services_decompiled
+          apktool d ../services.jar || echo "Decompilation failed"
+          ls -la
+
+      - name: Try to decompile SecSettings.apk
+        run: |
+          mkdir -p secsettings_decompiled
+          cd secsettings_decompiled
+          apktool d ../SecSettings.apk || echo "Decompilation failed"
+          ls -la
+
+      - name: List smali directories
+        run: |
+          echo "=== services_decompiled contents ==="
+          find services_decompiled -type d | head -20
+          echo ""
+          echo "=== secsettings_decompiled contents ==="
+          find secsettings_decompiled -type d | head -20
+
+      - name: Count smali files
+        run: |
+          echo "=== Number of .smali files in services ==="
+          find services_decompiled -name "*.smali" | wc -l
+          echo ""
+          echo "=== Number of .smali files in SecSettings ==="
+          find secsettings_decompiled -name "*.smali" | wc -l
+
+      - name: Search for any occurrence of "pin" in all smali files
+        run: |
+          echo "=== Any 'pin' in services smali ==="
+          grep -r -i "pin" services_decompiled/smali/ | head -20
+          echo ""
+          echo "=== Any 'pin' in SecSettings smali ==="
+          grep -r -i "pin" secsettings_decompiled/smali/ | head -20
+
+      - name: Upload decompiled directories
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decompiled-diagnostic
+          path: |
+            services_decompiled/
+            secsettings_decompiled/
