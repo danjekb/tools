@@ -26,9 +26,7 @@ jobs:
           wget -O apktool https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool
           chmod +x apktool
           sudo mv apktool /usr/local/bin/
-          
-          # Użyj stabilnej wersji 2.9.3
-          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool.jar
+          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.2/apktool_3.0.2.jar
           sudo mv apktool.jar /usr/local/bin/
 
       - name: Decompile services.jar
@@ -43,38 +41,59 @@ jobs:
           cd secsettings_decompiled
           apktool d ../SecSettings.apk
 
-      - name: Find const/4 with 0x6 in relevant files
+      - name: Generate analysis report
         run: |
-          echo "=== Searching in LockSettingsService.smali ==="
-          grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali || echo "Not found"
-          echo ""
-          echo "=== Searching in SyntheticPasswordManager.smali ==="
-          grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali || echo "Not found"
-          echo ""
-          echo "=== Searching in ChooseLockPassword\$ChooseLockPasswordFragment.smali ==="
-          grep -n "const/4.*0x6" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali || echo "Not found"
+          REPORT="pin_analysis_report.txt"
+          echo "=== PIN CONSTANTS ANALYSIS REPORT ===" > $REPORT
+          echo "Generated: $(date)" >> $REPORT
+          echo "" >> $REPORT
 
-      - name: Show method contexts (LockSettingsService)
-        run: |
-          echo "=== refreshStoredPinLength method context ==="
-          sed -n '/.method public final refreshStoredPinLength(I)Z/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+          # Funkcja do dodawania sekcji
+          add_section() {
+            echo "=== $1 ===" >> $REPORT
+            shift
+            grep -n "const/4.*0x6" "$@" >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
+            echo "" >> $REPORT
+          }
 
-      - name: Show method contexts (SyntheticPasswordManager)
-        run: |
-          echo "=== createLskfBasedProtector method context ==="
-          sed -n '/.method public final createLskfBasedProtector(/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+          echo "--- Full files ---" >> $REPORT
+          add_section "LockSettingsService.smali" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali
+          add_section "SyntheticPasswordManager.smali" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali
+          add_section "ChooseLockPassword\$ChooseLockPasswordFragment.smali" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali
 
-      - name: Show method contexts (SecSettings - handleNext)
-        run: |
-          echo "=== handleNext\$2 method context ==="
-          sed -n '/.method public final handleNext\$2()V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+          echo "--- Method contexts ---" >> $REPORT
+          echo "=== refreshStoredPinLength (LockSettingsService) ===" >> $REPORT
+          sed -n '/.method public final refreshStoredPinLength(I)Z/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
+          echo "" >> $REPORT
 
-      - name: Show method contexts (SecSettings - setAutoPinConfirmOption)
-        run: |
-          echo "=== setAutoPinConfirmOption method context ==="
-          sed -n '/.method public final setAutoPinConfirmOption(IZ)V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+          echo "=== createLskfBasedProtector (SyntheticPasswordManager) ===" >> $REPORT
+          sed -n '/.method public final createLskfBasedProtector(/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
+          echo "" >> $REPORT
 
-      - name: Upload decompiled files (optional)
+          echo "=== handleNext\$2 (SecSettings) ===" >> $REPORT
+          sed -n '/.method public final handleNext\$2()V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "=== setAutoPinConfirmOption (SecSettings) ===" >> $REPORT
+          sed -n '/.method public final setAutoPinConfirmOption(IZ)V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "--- Additional possible constants (const/16, const/4 with other registers) ---" >> $REPORT
+          echo "=== const/16 0x6 in LockSettingsService ===" >> $REPORT
+          grep -n "const/16.*0x6" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "=== const/16 0x6 in SyntheticPasswordManager ===" >> $REPORT
+          grep -n "const/16.*0x6" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "=== Any '6' in choose lock password fragment (excluding comments) ===" >> $REPORT
+          grep -n "\b6\b" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -v "//" >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
+
+          echo "Report saved to $REPORT"
+          cat $REPORT
+
+      - name: Upload decompiled files + report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -82,3 +101,4 @@ jobs:
           path: |
             services_decompiled/
             secsettings_decompiled/
+            pin_analysis_report.txt
