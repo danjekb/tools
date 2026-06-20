@@ -23,10 +23,12 @@ jobs:
 
       - name: Download and setup apktool
         run: |
-          wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool
+          wget -O apktool https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool
           chmod +x apktool
           sudo mv apktool /usr/local/bin/
-          wget https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool.jar
+          
+          # Użyj stabilnej wersji 2.9.3
+          wget -O apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool.jar
           sudo mv apktool.jar /usr/local/bin/
 
       - name: Decompile services.jar
@@ -45,11 +47,9 @@ jobs:
         run: |
           echo "=== Searching in LockSettingsService.smali ==="
           grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali || echo "Not found"
-
           echo ""
           echo "=== Searching in SyntheticPasswordManager.smali ==="
           grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali || echo "Not found"
-
           echo ""
           echo "=== Searching in ChooseLockPassword\$ChooseLockPasswordFragment.smali ==="
           grep -n "const/4.*0x6" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali || echo "Not found"
