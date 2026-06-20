@@ -1,0 +1,84 @@
+name: Find PIN constants
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download files
+        run: |
+          wget -O services.jar https://github.com/danjekb/tools/releases/download/1.0/services.jar
+          wget -O SecSettings.apk https://github.com/danjekb/tools/releases/download/1.0/SecSettings.apk
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk
+
+      - name: Download and setup apktool
+        run: |
+          wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool
+          chmod +x apktool
+          sudo mv apktool /usr/local/bin/
+          wget https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool.jar
+          sudo mv apktool.jar /usr/local/bin/
+
+      - name: Decompile services.jar
+        run: |
+          mkdir -p services_decompiled
+          cd services_decompiled
+          apktool d ../services.jar
+
+      - name: Decompile SecSettings.apk
+        run: |
+          mkdir -p secsettings_decompiled
+          cd secsettings_decompiled
+          apktool d ../SecSettings.apk
+
+      - name: Find const/4 with 0x6 in relevant files
+        run: |
+          echo "=== Searching in LockSettingsService.smali ==="
+          grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali || echo "Not found"
+
+          echo ""
+          echo "=== Searching in SyntheticPasswordManager.smali ==="
+          grep -n "const/4.*0x6" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali || echo "Not found"
+
+          echo ""
+          echo "=== Searching in ChooseLockPassword\$ChooseLockPasswordFragment.smali ==="
+          grep -n "const/4.*0x6" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali || echo "Not found"
+
+      - name: Show method contexts (LockSettingsService)
+        run: |
+          echo "=== refreshStoredPinLength method context ==="
+          sed -n '/.method public final refreshStoredPinLength(I)Z/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+
+      - name: Show method contexts (SyntheticPasswordManager)
+        run: |
+          echo "=== createLskfBasedProtector method context ==="
+          sed -n '/.method public final createLskfBasedProtector(/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+
+      - name: Show method contexts (SecSettings - handleNext)
+        run: |
+          echo "=== handleNext\$2 method context ==="
+          sed -n '/.method public final handleNext\$2()V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+
+      - name: Show method contexts (SecSettings - setAutoPinConfirmOption)
+        run: |
+          echo "=== setAutoPinConfirmOption method context ==="
+          sed -n '/.method public final setAutoPinConfirmOption(IZ)V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" || echo "No 0x6 found in this method"
+
+      - name: Upload decompiled files (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decompiled
+          path: |
+            services_decompiled/
+            secsettings_decompiled/
