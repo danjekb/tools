@@ -1,0 +1,84 @@
+name: Sprawdź poprawki PIN (4 cyfry)
+
+on:
+  workflow_dispatch:
+    inputs:
+      services_jar_url:
+        description: "URL do services.jar (z Twojego ROM-u)"
+        required: true
+      secsettings_apk_url:
+        description: "URL do SecSettings.apk (z Twojego ROM-u)"
+        required: true
+
+jobs:
+  check-pin-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobierz kod repozytorium
+        uses: actions/checkout@v4
+
+      - name: Zainstaluj Java (wymagane dla apktool)
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Pobierz i skonfiguruj apktool
+        run: |
+          wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.7.0.jar -O apktool.jar
+          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
+          chmod +x apktool
+          ./apktool --version
+
+      - name: Pobierz pliki ROM-u
+        run: |
+          wget -q "${{ inputs.services_jar_url }}" -O services.jar || {
+            echo "❌ Błąd: Nie udało się pobrać services.jar"
+            exit 1
+          }
+          wget -q "${{ inputs.secsettings_apk_url }}" -O SecSettings.apk || {
+            echo "❌ Błąd: Nie udało się pobrać SecSettings.apk"
+            exit 1
+          }
+          ls -lh
+
+      - name: Decompiluj i sprawdź pliki
+        run: |
+          # Decompiluj services.jar
+          ./apktool d services.jar -o services_decompiled -q --force || echo "⚠️  Błąd dekompilacji services.jar (może nie być JAR-em?)"
+
+          # Decompiluj SecSettings.apk
+          ./apktool d SecSettings.apk -o secsettings_decompiled -q --force || echo "⚠️  Błąd dekompilacji SecSettings.apk"
+
+          # Utwórz raport
+          echo "=== 📋 Raport: Sprawdzanie poprawek PIN (4 cyfry) ===" > report.txt
+          echo "Data: $(date)" >> report.txt
+          echo "" >> report.txt
+
+          # Sprawdź services.jar
+          echo "--- services.jar ---" >> report.txt
+          if grep -r --include="*.smali" "const/4.*0x6" services_decompiled/ 2>/dev/null; then
+            echo "✅ Znaleziono 'const/4.*0x6' w services.jar → POPRAWKA BĘDZIE DZIAŁAĆ!" >> report.txt
+            grep -rn --include="*.smali" "const/4.*0x6" services_decompiled/ >> report.txt
+          else
+            echo "❌ NIE znaleziono 'const/4.*0x6' w services.jar → Sprawdź inne lokalizacje!" >> report.txt
+          fi
+          echo "" >> report.txt
+
+          # Sprawdź SecSettings.apk
+          echo "--- SecSettings.apk ---" >> report.txt
+          if grep -r --include="*.smali" "const/4.*0x6" secsettings_decompiled/ 2>/dev/null; then
+            echo "✅ Znaleziono 'const/4.*0x6' w SecSettings.apk → POPRAWKA BĘDZIE DZIAŁAĆ!" >> report.txt
+            grep -rn --include="*.smali" "const/4.*0x6" secsettings_decompiled/ >> report.txt
+          else
+            echo "❌ NIE znaleziono 'const/4.*0x6' w SecSettings.apk → Sprawdź inne lokalizacje!" >> report.txt
+          fi
+
+          # Pokazuj raport w konsoli
+          cat report.txt
+
+      - name: Zapisz raport jako artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: raport-poprawek-pin
+          path: report.txt
