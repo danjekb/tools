@@ -1,4 +1,4 @@
-name: Find PIN constants
+name: Find ALL PIN constants
 
 on:
   workflow_dispatch:
@@ -41,64 +41,92 @@ jobs:
           cd secsettings_decompiled
           apktool d ../SecSettings.apk
 
-      - name: Generate analysis report
+      - name: Search ALL smali for const with 6
         run: |
-          REPORT="pin_analysis_report.txt"
-          echo "=== PIN CONSTANTS ANALYSIS REPORT ===" > $REPORT
-          echo "Generated: $(date)" >> $REPORT
-          echo "" >> $REPORT
+          echo "=== ALL const/4 0x6 in services ==="
+          grep -r -n "const/4.*0x6" services_decompiled/smali/ | head -200
+          echo ""
+          echo "=== ALL const/16 0x6 in services ==="
+          grep -r -n "const/16.*0x6" services_decompiled/smali/ | head -200
+          echo ""
+          echo "=== ALL const/4 0x6 in SecSettings ==="
+          grep -r -n "const/4.*0x6" secsettings_decompiled/smali/ | head -200
+          echo ""
+          echo "=== ALL const/16 0x6 in SecSettings ==="
+          grep -r -n "const/16.*0x6" secsettings_decompiled/smali/ | head -200
 
-          # Funkcja do dodawania sekcji
-          add_section() {
-            echo "=== $1 ===" >> $REPORT
-            shift
-            grep -n "const/4.*0x6" "$@" >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
-            echo "" >> $REPORT
-          }
+      - name: Search for PIN-related strings
+        run: |
+          echo "=== Files containing 'pinlength' in services ==="
+          grep -r -i -l "pinlength" services_decompiled/smali/ || echo "None"
+          echo ""
+          echo "=== Files containing 'minpin' in services ==="
+          grep -r -i -l "minpin" services_decompiled/smali/ || echo "None"
+          echo ""
+          echo "=== Files containing 'autoconfirm' in services ==="
+          grep -r -i -l "autoconfirm" services_decompiled/smali/ || echo "None"
+          echo ""
+          echo "=== Same in SecSettings ==="
+          grep -r -i -l "pinlength" secsettings_decompiled/smali/ || echo "None"
+          grep -r -i -l "minpin" secsettings_decompiled/smali/ || echo "None"
+          grep -r -i -l "autoconfirm" secsettings_decompiled/smali/ || echo "None"
 
-          echo "--- Full files ---" >> $REPORT
-          add_section "LockSettingsService.smali" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali
-          add_section "SyntheticPasswordManager.smali" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali
-          add_section "ChooseLockPassword\$ChooseLockPasswordFragment.smali" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali
+      - name: Find all methods with 'PIN' or 'password' in name (services)
+        run: |
+          echo "=== Methods containing 'Pin' in name (services) ==="
+          grep -r -n ".method.*Pin" services_decompiled/smali/ | head -100
 
-          echo "--- Method contexts ---" >> $REPORT
-          echo "=== refreshStoredPinLength (LockSettingsService) ===" >> $REPORT
-          sed -n '/.method public final refreshStoredPinLength(I)Z/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
-          echo "" >> $REPORT
+      - name: Find all methods with 'PIN' or 'password' in name (SecSettings)
+        run: |
+          echo "=== Methods containing 'Pin' in name (SecSettings) ==="
+          grep -r -n ".method.*Pin" secsettings_decompiled/smali/ | head -100
 
-          echo "=== createLskfBasedProtector (SyntheticPasswordManager) ===" >> $REPORT
-          sed -n '/.method public final createLskfBasedProtector(/,/.end method/p' services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
-          echo "" >> $REPORT
+      - name: Check XML resources for integer values
+        run: |
+          echo "=== Search integers.xml in SecSettings ==="
+          find secsettings_decompiled -name "integers.xml" -exec grep -H -n "6" {} \;
+          echo "=== Search config.xml in SecSettings ==="
+          find secsettings_decompiled -name "config.xml" -exec grep -H -n "6" {} \;
+          echo "=== Search any XML with 'pin' ==="
+          find secsettings_decompiled -name "*.xml" -exec grep -i -l "pin" {} \; | head -20
 
-          echo "=== handleNext\$2 (SecSettings) ===" >> $REPORT
-          sed -n '/.method public final handleNext\$2()V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
-          echo "" >> $REPORT
+      - name: Generate full report and save to artifact
+        run: |
+          {
+            echo "=== FULL PIN CONSTANTS ANALYSIS REPORT ==="
+            echo "Generated: $(date)"
+            echo ""
+            echo "--- All const/4 0x6 in services (first 300 lines) ---"
+            grep -r -n "const/4.*0x6" services_decompiled/smali/ | head -300
+            echo ""
+            echo "--- All const/16 0x6 in services (first 300) ---"
+            grep -r -n "const/16.*0x6" services_decompiled/smali/ | head -300
+            echo ""
+            echo "--- All const/4 0x6 in SecSettings (first 300) ---"
+            grep -r -n "const/4.*0x6" secsettings_decompiled/smali/ | head -300
+            echo ""
+            echo "--- All const/16 0x6 in SecSettings (first 300) ---"
+            grep -r -n "const/16.*0x6" secsettings_decompiled/smali/ | head -300
+            echo ""
+            echo "--- Methods with 'Pin' in name (services) ---"
+            grep -r ".method.*Pin" services_decompiled/smali/ | head -100
+            echo ""
+            echo "--- Methods with 'Pin' in name (SecSettings) ---"
+            grep -r ".method.*Pin" secsettings_decompiled/smali/ | head -100
+            echo ""
+            echo "--- XML resources with integer 6 ---"
+            find secsettings_decompiled -name "*.xml" -exec grep -H -n ">6<" {} \; | head -50
+            echo ""
+            echo "--- Files with 'pin' in name (SecSettings XML) ---"
+            find secsettings_decompiled -name "*.xml" | grep -i pin | head -20
+          } > pin_full_report.txt
 
-          echo "=== setAutoPinConfirmOption (SecSettings) ===" >> $REPORT
-          sed -n '/.method public final setAutoPinConfirmOption(IZ)V/,/.end method/p' secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -n "const/4.*0x6" >> $REPORT 2>/dev/null || echo "No 0x6 found in this method" >> $REPORT
-          echo "" >> $REPORT
-
-          echo "--- Additional possible constants (const/16, const/4 with other registers) ---" >> $REPORT
-          echo "=== const/16 0x6 in LockSettingsService ===" >> $REPORT
-          grep -n "const/16.*0x6" services_decompiled/smali/com/android/server/locksettings/LockSettingsService.smali >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
-          echo "" >> $REPORT
-
-          echo "=== const/16 0x6 in SyntheticPasswordManager ===" >> $REPORT
-          grep -n "const/16.*0x6" services_decompiled/smali/com/android/server/locksettings/SyntheticPasswordManager.smali >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
-          echo "" >> $REPORT
-
-          echo "=== Any '6' in choose lock password fragment (excluding comments) ===" >> $REPORT
-          grep -n "\b6\b" secsettings_decompiled/smali/com/android/settings/password/ChooseLockPassword\$ChooseLockPasswordFragment.smali | grep -v "//" >> $REPORT 2>/dev/null || echo "Not found" >> $REPORT
-
-          echo "Report saved to $REPORT"
-          cat $REPORT
-
-      - name: Upload decompiled files + report
+      - name: Upload all artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: decompiled
+          name: full-analysis
           path: |
+            pin_full_report.txt
             services_decompiled/
             secsettings_decompiled/
-            pin_analysis_report.txt
