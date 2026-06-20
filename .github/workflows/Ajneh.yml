@@ -13,12 +13,14 @@ on:
 jobs:
   check-pin-patch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Pobierz kod repozytorium
         uses: actions/checkout@v4
 
       - name: Zainstaluj Java (wymagane dla apktool)
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -32,11 +34,11 @@ jobs:
 
       - name: Pobierz pliki ROM-u
         run: |
-          wget -q "${{ inputs.services_jar_url }}" -O services.jar || {
+          curl -fSL -o services.jar "${{ inputs.services_jar_url }}" || {
             echo "❌ Błąd: Nie udało się pobrać services.jar"
             exit 1
           }
-          wget -q "${{ inputs.secsettings_apk_url }}" -O SecSettings.apk || {
+          curl -fSL -o SecSettings.apk "${{ inputs.secsettings_apk_url }}" || {
             echo "❌ Błąd: Nie udało się pobrać SecSettings.apk"
             exit 1
           }
@@ -44,41 +46,40 @@ jobs:
 
       - name: Decompiluj i sprawdź pliki
         run: |
-          # Decompiluj services.jar
-          ./apktool d services.jar -o services_decompiled -q --force || echo "⚠️  Błąd dekompilacji services.jar (może nie być JAR-em?)"
+          mkdir -p services_decompiled secsettings_decompiled
 
-          # Decompiluj SecSettings.apk
-          ./apktool d SecSettings.apk -o secsettings_decompiled -q --force || echo "⚠️  Błąd dekompilacji SecSettings.apk"
+          # Dekompilacja z obsługą błędów
+          ./apktool d services.jar -o services_decompiled -q --force || echo "⚠️  services.jar nie został pomyślnie rozpakowany"
+          ./apktool d SecSettings.apk -o secsettings_decompiled -q --force || echo "⚠️  SecSettings.apk nie został pomyślnie rozpakowany"
 
           # Utwórz raport
-          echo "=== 📋 Raport: Sprawdzanie poprawek PIN (4 cyfry) ===" > report.txt
-          echo "Data: $(date)" >> report.txt
-          echo "" >> report.txt
+          {
+            echo "=== 📋 Raport: Sprawdzanie poprawek PIN (4 cyfry) ==="
+            echo "Data: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo ""
+            echo "--- services.jar ---"
+            if [ -d services_decompiled ] && grep -rq --include="*.smali" "const/4.*0x6" services_decompiled/ 2>/dev/null; then
+              echo "✅ Znaleziono 'const/4.*0x6' w services.jar → POPRAWKA BĘDZIE DZIAŁAĆ!"
+              grep -rn --include="*.smali" "const/4.*0x6" services_decompiled/
+            else
+              echo "❌ NIE znaleziono 'const/4.*0x6' w services.jar → Sprawdź inne lokalizacje!"
+            fi
+            echo ""
+            echo "--- SecSettings.apk ---"
+            if [ -d secsettings_decompiled ] && grep -rq --include="*.smali" "const/4.*0x6" secsettings_decompiled/ 2>/dev/null; then
+              echo "✅ Znaleziono 'const/4.*0x6' w SecSettings.apk → POPRAWKA BĘDZIE DZIAŁAĆ!"
+              grep -rn --include="*.smali" "const/4.*0x6" secsettings_decompiled/
+            else
+              echo "❌ NIE znaleziono 'const/4.*0x6' w SecSettings.apk → Sprawdź inne lokalizacje!"
+            fi
+          } > report.txt
 
-          # Sprawdź services.jar
-          echo "--- services.jar ---" >> report.txt
-          if grep -r --include="*.smali" "const/4.*0x6" services_decompiled/ 2>/dev/null; then
-            echo "✅ Znaleziono 'const/4.*0x6' w services.jar → POPRAWKA BĘDZIE DZIAŁAĆ!" >> report.txt
-            grep -rn --include="*.smali" "const/4.*0x6" services_decompiled/ >> report.txt
-          else
-            echo "❌ NIE znaleziono 'const/4.*0x6' w services.jar → Sprawdź inne lokalizacje!" >> report.txt
-          fi
-          echo "" >> report.txt
-
-          # Sprawdź SecSettings.apk
-          echo "--- SecSettings.apk ---" >> report.txt
-          if grep -r --include="*.smali" "const/4.*0x6" secsettings_decompiled/ 2>/dev/null; then
-            echo "✅ Znaleziono 'const/4.*0x6' w SecSettings.apk → POPRAWKA BĘDZIE DZIAŁAĆ!" >> report.txt
-            grep -rn --include="*.smali" "const/4.*0x6" secsettings_decompiled/ >> report.txt
-          else
-            echo "❌ NIE znaleziono 'const/4.*0x6' w SecSettings.apk → Sprawdź inne lokalizacje!" >> report.txt
-          fi
-
-          # Pokazuj raport w konsoli
           cat report.txt
 
       - name: Zapisz raport jako artifact
-        uses: actions/upload-artifact@v3
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: raport-poprawek-pin
           path: report.txt
+          retention-days: 30
