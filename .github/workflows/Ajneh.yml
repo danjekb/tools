@@ -25,9 +25,21 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # 🔹 Cache'ujemy apktool, żeby nie pobierać go za każdym razem
+      - name: Cache apktool
+        uses: actions/cache@v4
+        id: cache-apktool
+        with:
+          path: |
+            apktool.jar
+            apktool
+          key: apktool-v2.7.0-${{ runner.os }}
+
       - name: Pobierz i skonfiguruj apktool
+        if: steps.cache-apktool.outputs.cache-hit != 'true'
         run: |
-          wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.7.0.jar -O apktool.jar
+          # ✅ Używamy oficjalnych GitHub Releases (Bitbucket jest niestabilny)
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.7.0/apktool_2.7.0.jar -O apktool.jar
           wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
           chmod +x apktool
           ./apktool --version
