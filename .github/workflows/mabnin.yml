@@ -1,0 +1,79 @@
+name: Znajdź poprawne lokalizacje PIN
+
+on:
+  workflow_dispatch:
+    inputs:
+      secsettings_apk_url:
+        description: "URL do SecSettings.apk"
+        required: true
+      services_jar_url:
+        description: "URL do services.jar"
+        required: true
+
+jobs:
+  find-pin-locations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup apktool
+        run: |
+          wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.7.0.jar -O apktool.jar
+          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
+          chmod +x apktool
+
+      - name: Download files
+        run: |
+          wget -q "${{ inputs.services_jar_url }}" -O services.jar
+          wget -q "${{ inputs.secsettings_apk_url }}" -O SecSettings.apk
+
+      - name: Decompile
+        run: |
+          ./apktool d services.jar -o services_decompiled -q --force || true
+          ./apktool d SecSettings.apk -o secsettings_decompiled -q --force || true
+
+      - name: Szukaj metod związanych z PIN-em
+        run: |
+          echo "=== Szukam metod PIN w services.jar ===" > pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          # Szukaj refreshStoredPinLength
+          echo "--- refreshStoredPinLength ---" >> pin_locations.txt
+          grep -rn "refreshStoredPinLength" services_decompiled/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          # Szukaj createLskfBasedProtector
+          echo "--- createLskfBasedProtector ---" >> pin_locations.txt
+          grep -rn "createLskfBasedProtector" services_decompiled/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          # Szukaj w SecSettings.apk
+          echo "=== Szukam metod PIN w SecSettings.apk ===" >> pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          echo "--- handleNext$2 ---" >> pin_locations.txt
+          grep -rn "handleNext\$2" secsettings_decompiled/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          echo "--- setAutoPinConfirmOption ---" >> pin_locations.txt
+          grep -rn "setAutoPinConfirmOption" secsettings_decompiled/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+          echo "" >> pin_locations.txt
+
+          # Szukaj ALL const/4 w plikach PIN-related
+          echo "=== Wszystkie const/4 w plikach związanych z PIN/hasłem ===" >> pin_locations.txt
+          grep -rn "const/4" secsettings_decompiled/smali/com/android/settings/password/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+          grep -rn "const/4" services_decompiled/smali/com/android/server/locksettings/ >> pin_locations.txt || echo "Nie znaleziono" >> pin_locations.txt
+
+          cat pin_locations.txt
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pin-locations-report
+          path: pin_locations.txt
