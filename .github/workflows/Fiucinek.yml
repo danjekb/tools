@@ -1,0 +1,53 @@
+name: Pobierz ZIP i utwórz Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_url:
+        description: 'URL do pliku ZIP (np. https://example.com/app.zip)'
+        required: true
+      release_tag:
+        description: 'Tag release (np. v1.2.3)'
+        required: true
+      release_name:
+        description: 'Nazwa release'
+        required: true
+      release_body:
+        description: 'Opis release (Markdown)'
+        required: false
+        default: 'Automatyczna aktualizacja'
+
+# Wymagane uprawnienia do tworzenia release'ów
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Pobierz ZIP
+      - name: Pobierz plik ZIP
+        run: |
+          set -e
+          curl -fSL -o package.zip ${{ inputs.zip_url }}
+          echo "✅ Plik pobrany: $(ls -lh package.zip | awk '{print $5}')"
+
+      # 2. Wypakuj zawartość
+      - name: Wypakuj pliki
+        run: |
+          mkdir -p release-content
+          unzip -q package.zip -d release-content
+          echo "📦 Wypakowane pliki:"
+          find release-content -type f | head -20
+
+      # 3. Utwórz Release i wgraj pliki
+      - name: Utwórz Release i wgraj załączniki
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          body: ${{ inputs.release_body }}
+          # Globy wskazują, które pliki mają trafić do release'u
+          files: release-content/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
