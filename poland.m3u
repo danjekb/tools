@@ -6,7 +6,7 @@
 https://stream.4fun.tv:8889/hls/4fk.m3u8
 #EXTINF:-1 tvg-id="pl-car-city-adventures-s" tvg-logo="https://images-0.rakuten.tv/storage/global-live-channel/translation/artwork/bd356b80-79d9-46ff-9674-e69aaf10022f-width200-quality90.jpeg" group-title="Dla Dzieci",Car City Adventures Ⓢ
 https://d39g1vxj2ef6in.cloudfront.net/v1/master/3fec3e5cac39a52b2132f9c66c83dae043dc17d4/prod-rakuten-stitched/master.m3u8?ads.xumo_channelId=88883095
-#EXTINF:-1 tvg-id="pl-cbeebies-360p" tvg-logo="https://ui-avatars.com/api/?name=CBeebies360p&background=1e1e2e&color=ffffff&size=512&format=png" group-title="Dla Dzieci",CBeebies (360p)
+#EXTINF:-1 tvg-id="BBC.CBeebies.pl" tvg-logo="https://ui-avatars.com/api/?name=CBeebies360p&background=1e1e2e&color=ffffff&size=512&format=png" group-title="Dla Dzieci",CBeebies (360p)
 https://gist.githubusercontent.com/xykt-fix/e01ce187bbad74d0a0c5a86e0fc1b885/raw/eb00491161b819c2321733e929a27aeb2972b416/cbeeb-stream.m3u8
 #EXTINF:-1 tvg-id="Disney.Channel.pl" tvg-logo="https://ui-avatars.com/api/?name=DisneyChannelHD1080p&background=1e1e2e&color=ffffff&size=512&format=png" group-title="Dla Dzieci",Disney Channel HD (1080p)
 http://185.227.34.179:8080/disney-channel-hd/index.m3u8
